@@ -1,0 +1,272 @@
+---
+title: "Project3"
+author: "Zeyu Li"
+date: "2023-10-14"
+output: html_document
+---
+
+# Prepare packages
+
+```{r, warning=FALSE}
+library("tidyverse")
+library("here")
+library("lubridate")
+library("ggplot2")
+library("forcats")
+library("stringr")
+library("tidytext")
+```
+
+```{r, message=FALSE}
+rds_files <- c("b_lyrics.RDS", "ts_lyrics.RDS", "sales.RDS")
+if (!dir.exists(here("data"))) {
+    dir.create(here("data"))
+}
+
+## Check whether we have all 3 files
+if (any(!file.exists(here("data", rds_files)))) {
+    ## If we don't, then download the data
+    b_lyrics <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-29/beyonce_lyrics.csv")
+    ts_lyrics <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-29/taylor_swift_lyrics.csv")
+    sales <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-29/sales.csv")
+
+    ## Then save the data objects to RDS files
+    saveRDS(b_lyrics, file = here("data", "b_lyrics.RDS"))
+    saveRDS(ts_lyrics, file = here("data", "ts_lyrics.RDS"))
+    saveRDS(sales, file = here("data", "sales.RDS"))
+}
+```
+
+```{r, eval=TRUE, message=FALSE}
+b_lyrics <- readRDS(here("data", "b_lyrics.RDS"))
+ts_lyrics <- readRDS(here("data", "ts_lyrics.RDS"))
+sales <- readRDS(here("data", "sales.RDS"))
+```
+
+# Part 1: Explore album sales
+
+In this section, the goal is to explore the sales of studio albums from Beyoncé and Taylor Swift.
+
+**Notes**
+
+-   In each of the subsections below that ask you to create a plot, you must create a title, subtitle, x-axis label, and y-axis label with units where applicable. For example, if your axis says "sales" as an axis label, change it to "sales (in millions)".
+
+## Part 1A
+
+In this section, we will do some data wrangling.
+
+1.  Use `lubridate` to create a column called `released` that is a `Date` class. However, to be able to do this, you first need to use `stringr` to search for pattern that matches things like this "(US)[51]" in a string like this "September 1, 2006 (US)[51]" and removes them. (**Note**: to get full credit, you must create the regular expression).
+2.  Use `forcats` to create a factor called `country` (**Note**: you may need to collapse some factor levels).
+3.  Transform the `sales` into a unit that is album sales in millions of dollars.
+4.  Keep only album sales from the UK, the US or the World.
+5.  Auto print your final wrangled tibble data frame.
+
+```{r}
+#1
+part1a <- sales %>%
+  mutate(
+    released = str_remove_all(released, "\\([A-Z]{2}\\)\\[[0-9]{2}\\]")
+    )
+part1a$released = mdy(part1a$released)
+#2
+country_levels <- c("AUS","CAN","FR","FRA","JPN","UK","US","World","WW")
+part1a$country = factor(part1a$country, levels = country_levels)
+part1a$country <- fct_collapse(part1a$country, "World" = c("World","WW"))
+#3
+part1a$sales = part1a$sales/1000000
+#4
+part1a <- filter(part1a, country == "UK" | country == "US" | country == "World")
+#5
+part1a
+```
+
+## Part 1B
+
+In this section, we will do some more data wrangling followed by summarization using wrangled data from Part 1A.
+
+1.  Keep only album sales from the US.
+2.  Create a new column called `years_since_release` corresponding to the number of years since the release of each album from Beyoncé and Taylor Swift. This should be a whole number and you should round down to "14" if you get a non-whole number like "14.12" years. (**Hint**: you may find the `interval()` function from `lubridate` helpful here, but this not the only way to do this.)
+3.  Calculate the most recent, oldest, and the median years since albums were released for both Beyoncé and Taylor Swift.
+
+```{r}
+#1
+part1b <- filter(part1a, country == "US")
+#2
+part1b <- part1b %>%
+  mutate(
+    years_since_release = round(time_length(interval(released, today()), unit = "year"))
+  )
+#3
+part1b %>%
+  group_by(artist) %>%
+  summarise(
+    most_recent = min(years_since_release),
+    oldest = max(years_since_release),
+    median = median(years_since_release)
+  ) -> part1b_table
+part1b_table
+```
+
+## Part 1C
+
+Using the wrangled data from Part 1A:
+
+1.  Calculate the total album sales for each artist and for each `country` (only sales from the UK, US, and World).
+2.  Using the total album sales, create a [percent stacked barchart](https://r-graph-gallery.com/48-grouped-barplot-with-ggplot2) using `ggplot2` of the percentage of sales of studio albums (in millions) along the y-axis for the two artists along the x-axis colored by the `country`.
+
+```{r}
+#1
+part1a_b <- subset(part1a, part1a$artist == "Beyoncé")
+part1a_t <- subset(part1a, part1a$artist == "Taylor Swift")
+part1a_b %>%
+  group_by(country) %>%
+  summarise(
+    total_sales = sum(sales)
+  ) %>%
+  mutate(artist = "Beyoncé") -> part1c_b
+part1a_t %>%
+  group_by(country) %>%
+  summarise(
+    total_sales = sum(sales)
+  ) %>%
+  mutate(artist = "Taylor Swift") -> part1c_t
+part1c <- rbind(part1c_b, part1c_t)
+#2
+ggplot(part1c, aes(fill=country, y=total_sales, x=artist)) + 
+  geom_bar(position="fill", stat="identity") +
+  labs(title = "A percent stacked barchart for album sales of Beyoncé and Taylor Swift", subtitle = "The most sales were from the worldwide both for Beyoncé and Taylor Swift", x = "Artist's name", y = "Total album sales (in millions of dollars)", caption = "Made by Li, Z.")
+```
+
+## Part 1D
+
+Using the wrangled data from Part 1A, use `ggplot2` to create a bar plot for the sales of studio albums (in millions) along the x-axis for each of the album titles along the y-axis.
+
+**Note**:
+
+-   You only need to consider the global World sales (you can ignore US and UK sales for this part).
+-   The title of the album must be clearly readable along the y-axis.
+-   Each bar should be colored by which artist made that album.
+-   The bars should be ordered from albums with the most sales (top) to the least sales (bottom) (**Note**: you must use functions from `forcats` for this step).
+
+```{r}
+part1d <- subset(part1a, part1a$country == "World")
+part1d %>%
+  ggplot(aes(sales, fct_reorder(title, sales), fill = artist)) +
+  geom_bar(width = 0.7, stat="identity") +
+  theme_bw() +
+  theme(axis.text.y.left = element_text(size = 8, angle = 45)) +
+  labs(title = "World sales of studio albums", subtitle = "Fearless of Taylor Swift had the highest sales", x = "Sales of studio albums (in millions of dollars)", y = "Album titles", caption = "Made by Li, Z.")
+```
+
+## Part 1E
+
+Using the wrangled data from Part 1A, use `ggplot2` to create a scatter plot of sales of studio albums (in millions) along the y-axis by the released date for each album along the x-axis.
+
+**Note**:
+
+-   The points should be colored by the artist.
+-   There should be three scatter plots (one for UK, US and world sales) faceted by rows.
+
+```{r}
+part1a %>%
+  ggplot(aes(released, sales, color = artist)) +
+  geom_point() +
+  facet_grid(country~.) +
+  labs(title = "Sales of studio albums over time", subtitle = "The sales of studio albums of both Beyoncé and Taylor Swift decreased over time", x = "Released date", y = "Sales of studio albums (in millions of dollars)", caption = "Made by Li, Z.")
+```
+
+# Part 2: Exploring sentiment of lyrics
+
+In Part 2, we will explore the lyrics in the `b_lyrics` and `ts_lyrics` datasets.
+
+## Part 2A
+
+Using `ts_lyrics`, create a new column called `line` with one line containing the character string for each line of Taylor Swift's songs.
+
+-   How many lines in Taylor Swift's lyrics contain the word "hello"? For full credit, show all the rows in `ts_lyrics` that have "hello" in the `line` column and report how many rows there are in total.
+-   How many lines in Taylor Swift's lyrics contain the word "goodbye"? For full credit, show all the rows in `ts_lyrics` that have "goodbye" in the `line` column and report how many rows there are in total.
+
+```{r}
+ts_lines <-
+    ts_lyrics %>%
+    unnest_tokens(
+        output = line,
+        input = Lyrics,
+        token = "lines"
+    )
+
+ts_lines_hello <- subset(ts_lines, grepl("hello", tolower(ts_lines$line)) == T)
+ts_lines_hello
+nrow(ts_lines_hello)
+
+#another solution
+detect_line <- function(data, word) {
+  a <- subset(data, grepl(word, tolower(data$line)) == T)
+  print(a)
+  nrow(a)
+}
+detect_line(ts_lines, "hello")
+
+detect_line(ts_lines, "goodbye")
+```
+
+## Part 2B
+
+Repeat the same analysis for `b_lyrics` as described in Part 2A.
+
+```{r}
+detect_line(b_lyrics, "hello")
+detect_line(b_lyrics, "goodbye")
+```
+
+## Part 2C
+
+Using the `b_lyrics` dataset,
+
+1.  Tokenize each lyrical line by words.
+2.  Remove the "stopwords".
+3.  Calculate the total number for each word in the lyrics.
+4.  Using the "bing" sentiment lexicon, add a column to the summarized data frame adding the "bing" sentiment lexicon.
+5.  Sort the rows from most frequent to least frequent words.
+6.  Only keep the top 25 most frequent words.
+7.  Auto print the wrangled tibble data frame.
+8.  Use `ggplot2` to create a bar plot with the top words on the y-axis and the frequency of each word on the x-axis. Color each bar by the sentiment of each word from the "bing" sentiment lexicon. Bars should be ordered from most frequent on the top to least frequent on the bottom of the plot.
+9.  Create a word cloud of the top 25 most frequent words.
+
+```{r}
+# Add your solution here
+```
+
+## Part 2D
+
+Repeat the same analysis as above in Part 2C, but for `ts_lyrics`.
+
+```{r}
+# Add your solution here
+```
+
+## Part 2E
+
+Using the `ts_lyrics` dataset,
+
+1.  Tokenize each lyrical line by words.
+2.  Remove the "stopwords".
+3.  Calculate the total number for each word in the lyrics **for each Album**.
+4.  Using the "afinn" sentiment lexicon, add a column to the summarized data frame adding the "afinn" sentiment lexicon.
+5.  Calculate the average sentiment score **for each Album**.
+6.  Auto print the wrangled tibble data frame.
+7.  Join the wrangled data frame from Part 1A (album sales in millions) with the wrangled data frame from #6 above (average sentiment score for each album).
+8.  Using `ggplot2`, create a scatter plot of the average sentiment score for each album (y-axis) and the album release data along the x-axis. Make the size of each point the album sales in millions.
+9.  Add a horizontal line at y-intercept=0.
+10. Write 2-3 sentences interpreting the plot answering the question "How has the sentiment of Taylor Swift's albums have changed over time?". Add a title, subtitle, and useful axis labels.
+
+```{r}
+# Add your solution here
+```
+
+# R session information
+
+```{r}
+options(width = 120)
+sessioninfo::session_info()
+```
